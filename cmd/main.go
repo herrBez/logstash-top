@@ -12,19 +12,18 @@ import (
 	"atomicgo.dev/keyboard/keys"
 )
 
+var fixedHelpMessage = `Help Message
+- 'h' show this message/exit from help
+- Up/Down to select the pipeline
+- Enter to select the pipeline
+- 'q' quit
+- 'p' pause stop querying new data
+`
+
 var helpMessages = map[bool]string{
-	false: `Help Message
-- Up/Down to select the pipeline
-- Enter to select the pipeline
-- 'q' quit
-- 'p' pause stop querying new data
-`,
-	true: `Help Message
-- Up/Down to select the pipeline
-- Enter to select the pipeline
-- 'q' quit
-- 'b' back
-- 'p' pause stop querying new data
+	false: fixedHelpMessage,
+	true: fixedHelpMessage +
+		`- 'b' back
 `,
 }
 
