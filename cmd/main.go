@@ -119,7 +119,7 @@ func main() {
 
 	for !quit {
 		lastMessage = message
-		if help {
+		if help { // To be reactive to the press of the 'h'
 			message = helpMessages[selected]
 			sleepDuration = 200 * time.Millisecond
 		} else {
@@ -135,12 +135,12 @@ func main() {
 				useAnswer = previousSuccessFlowStatsAnswer
 			}
 			content := ""
-			if selected {
+			if !selected {
 				content = lfc.RenderPipelineFlowStats(useAnswer, pipelineInfo, pipelines, selectedIndex)
 			} else {
 				content = lfc.RenderPipelineFlowStatsDetails(pipelineFlowStatsAnswer, pipelineInfo, pipelines, selectedIndex)
 			}
-			errorString := "\n"
+			errorString := "Success\n"
 			if err != nil {
 				errorString = fmt.Sprintf("Warning: could not fetch data %s\n", err)
 			}
@@ -148,7 +148,6 @@ func main() {
 		}
 		if lastMessage != message {
 			area.Update(message)
-
 		}
 		time.Sleep(sleepDuration)
 	}
