@@ -4,21 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/fatih/color"
 )
 
 type LogstashFlowConfig struct {
-	Url string
+	Url                string
+	WorkerMetricToShow int
 }
 
 func NewLogstashFlowConfig(url string) LogstashFlowConfig {
 	return LogstashFlowConfig{
 		Url: url,
 	}
+}
+
+func (lfc *LogstashFlowConfig) NextMetric() {
+	lfc.WorkerMetricToShow = (lfc.WorkerMetricToShow + 1) % 2
 }
 
 type FlowIntervals struct {
@@ -33,6 +36,19 @@ type FlowIntervals struct {
 type FlowWorkers struct {
 	WorkerUtilization    FlowIntervals `json:"worker_utilization"`
 	WorkerMillisPerEvent FlowIntervals `json:"worker_millis_per_event"`
+}
+
+func (fw FlowWorkers) getFlowWorkerMetricsValue(i int) FlowIntervals {
+	if i%2 == 0 {
+		return fw.WorkerUtilization
+	} else {
+		return fw.WorkerMillisPerEvent
+	}
+}
+
+var FlowMetricsDisplayName = []string{
+	"Wor Utilization",
+	"Wor Mil Per Eve",
 }
 
 type FilterOrOutput struct {
@@ -207,23 +223,25 @@ func getDiffString(diff float64) string {
 	return diffOutput
 }
 
-func printFlowWorkers(fw []FilterOrOutput) string {
+func getFlowIntervalDiffsString(fi FlowIntervals) string {
+	return fmt.Sprintf("%-15f|%-15s|%-15s|%-15s",
+		fi.Current,
+		getDiffString(fi.Current-fi.Lifetime),
+		getDiffString(fi.Current-fi.Last15Minutes),
+		getDiffString(fi.Current-fi.Last1Minute),
+	)
+}
+
+func (lfc LogstashFlowConfig) printFlowWorkers(fw []FilterOrOutput) string {
+
 	output := fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
-	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|%-15s|\n", "Name", "CMillisPerEvent", "CurrentWU", "DiffLifetime", "Diff1Minutes")
+	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|%-15s|\n", "Name", FlowMetricsDisplayName[lfc.WorkerMetricToShow], "DiffLifetime", "Diff1Minutes", "Diff15Minutes")
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
 	for i := 0; i < len(fw); i++ {
 
-		CurrentWU := fmt.Sprintf("%f", fw[i].Flow.WorkerUtilization.Current)
-		CurrentWUMillis := fmt.Sprintf("%f", fw[i].Flow.WorkerMillisPerEvent.Current)
-
-		output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|%-15s|\n",
+		output += fmt.Sprintf("|%-10s|%s|\n",
 			fw[i].Name,
-			CurrentWUMillis,
-			CurrentWU,
-			getDiffString(fw[i].Flow.WorkerUtilization.Current-
-				fw[i].Flow.WorkerUtilization.Lifetime),
-			getDiffString(fw[i].Flow.WorkerUtilization.Current-
-				fw[i].Flow.WorkerUtilization.Last1Minute),
+			getFlowIntervalDiffsString(fw[i].Flow.getFlowWorkerMetricsValue(lfc.WorkerMetricToShow)),
 		)
 	}
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
@@ -231,47 +249,41 @@ func printFlowWorkers(fw []FilterOrOutput) string {
 
 }
 
-func (lfc LogstashFlowConfig) GetPipelineInfo() NodeOverview {
+func (lfc LogstashFlowConfig) GetPipelineInfo() (NodeOverview, error) {
 	resp, err := http.Get(lfc.Url + "/_node")
 	if err != nil {
-		log.Panicf("Error %s", err)
-		os.Exit(1)
+		return NodeOverview{}, fmt.Errorf("error could not get info for %s %w", lfc.Url, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Panicf("Error %s", err)
-		os.Exit(1)
+		return NodeOverview{}, fmt.Errorf("error could not read body: %w", err)
 	}
 	nodeOverview := NodeOverview{}
 	err = json.Unmarshal(body, &nodeOverview)
-
-	return nodeOverview
+	return nodeOverview, err
 }
 
-func (lfc LogstashFlowConfig) GetPipelineFlowStats(pipelineInfo NodeOverview) PipelineAnswer {
+func (lfc LogstashFlowConfig) GetPipelineFlowStats(pipelineInfo NodeOverview) (PipelineAnswer, error) {
 	resp, err := http.Get(lfc.Url + "/_node/stats/pipelines")
 	if err != nil {
-		log.Panicf("Error %s", err)
-		os.Exit(1)
+		return PipelineAnswer{}, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Panicf("Error %s", err)
-		os.Exit(1)
+		return PipelineAnswer{}, err
 	}
 
 	answer := PipelineAnswer{}
 	err = json.Unmarshal(body, &answer)
 	if err != nil {
-		log.Panicf("Could not unmarshal json %s", err)
-		os.Exit(1)
+		return PipelineAnswer{}, err
 	}
-	return answer
+	return answer, err
 }
 
-func RenderPipelineFlowStatsDetails(answer PipelineAnswer, pipelineInfo NodeOverview, pipelines []string, selectedIndex int) string {
+func (lfc LogstashFlowConfig) RenderPipelineFlowStatsDetails(answer PipelineAnswer, pipelineInfo NodeOverview, pipelines []string, selectedIndex int) string {
 	output := ""
 	pipelineName := pipelines[selectedIndex]
 	output += fmt.Sprintf("Pipeline '%s'\n", pipelineName)
@@ -287,7 +299,7 @@ func RenderPipelineFlowStatsDetails(answer PipelineAnswer, pipelineInfo NodeOver
 
 	output += fmt.Sprintf("%30s", "===Inputs===\n")
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
-	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|\n", "Name", "Current", "DiffLifetime", "Diff1Minutes")
+	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|\n", "Name", "Throughput", "DiffLifetime", "Diff1Minutes")
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
 	for i := 0; i < len(answer.Pipelines[pipelineName].Plugins.Inputs); i++ {
 
@@ -302,10 +314,10 @@ func RenderPipelineFlowStatsDetails(answer PipelineAnswer, pipelineInfo NodeOver
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
 
 	output += fmt.Sprintf("%30s", "===Filters===\n")
-	output += printFlowWorkers(answer.Pipelines[pipelineName].Plugins.Filters)
+	output += lfc.printFlowWorkers(answer.Pipelines[pipelineName].Plugins.Filters)
 
 	output += fmt.Sprintf("%30s", "===Outputs===\n")
-	output += printFlowWorkers(answer.Pipelines[pipelineName].Plugins.Outputs)
+	output += lfc.printFlowWorkers(answer.Pipelines[pipelineName].Plugins.Outputs)
 
 	// output += fmt.Sprintf("%f", answer.Pipelines[pipelineName].Flow.QueuePersistedGrowthEvents.Last1Minute)
 
@@ -319,7 +331,7 @@ func FloatString(v float64) string {
 	return fmt.Sprintf("%.4f", v)
 }
 
-func RenderPipelineFlowStats(answer PipelineAnswer, pipelineInfo NodeOverview, pipelines []string, selectedIndex int) string {
+func (lfc LogstashFlowConfig) RenderPipelineFlowStats(answer PipelineAnswer, pipelineInfo NodeOverview, pipelines []string, selectedIndex int) string {
 	output := ""
 	padding := "  "
 

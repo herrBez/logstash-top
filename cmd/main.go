@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	logstash_flow "cmd/main.go/internal"
@@ -28,13 +29,23 @@ var helpMessages = map[bool]string{
 }
 
 var pausedMessage = map[bool]string{
-	true:  "Active Query is stopped\n",
+	true:  "Active Query is stopped. Press 'p' to restart\n",
 	false: "\n",
 }
 
 func main() {
 	lfc := logstash_flow.NewLogstashFlowConfig("http://localhost:9600")
-	pipelineInfo := lfc.GetPipelineInfo()
+	pipelineInfo, err := lfc.GetPipelineInfo()
+
+	for {
+		if err == nil {
+			break
+		} else {
+			log.Printf("%s", err)
+			time.Sleep(2 * time.Second)
+			pipelineInfo, err = lfc.GetPipelineInfo()
+		}
+	}
 
 	pipelines := []string{}
 	selectedIndex := 0
@@ -85,6 +96,9 @@ func main() {
 			if key.String() == "h" {
 				help = !help
 			}
+			if key.String() == "w" {
+				lfc.NextMetric()
+			}
 
 			// fmt.Printf("\rYou pressed the rune key: %s\n", key)
 			// default:
@@ -97,30 +111,46 @@ func main() {
 	fmt.Println("Logstash Top")
 	fmt.Println("--------------------------")
 	area := cursor.NewArea()
-	pipelineFlowStatsAnswer := lfc.GetPipelineFlowStats(pipelineInfo)
+	previousSuccessFlowStatsAnswer := logstash_flow.PipelineAnswer{}
+	pipelineFlowStatsAnswer := logstash_flow.PipelineAnswer{}
+	lastMessage := ""
+	message := ""
+	sleepDuration := 1 * time.Second
 
 	for !quit {
+		lastMessage = message
 		if help {
-			area.Update(helpMessages[selected])
-			time.Sleep(200 * time.Millisecond)
+			message = helpMessages[selected]
+			sleepDuration = 200 * time.Millisecond
 		} else {
+			sleepDuration = 1 * time.Second
+			// If not paused download new information
 			if !paused {
-				pipelineFlowStatsAnswer = lfc.GetPipelineFlowStats(pipelineInfo)
+				previousSuccessFlowStatsAnswer = pipelineFlowStatsAnswer
+				pipelineFlowStatsAnswer, err = lfc.GetPipelineFlowStats(pipelineInfo)
 			}
-			if !selected {
-				content := logstash_flow.RenderPipelineFlowStats(pipelineFlowStatsAnswer, pipelineInfo, pipelines, selectedIndex)
 
-				area.Update(content + pausedMessage[paused])
-				time.Sleep(1 * time.Second)
-
+			useAnswer := pipelineFlowStatsAnswer
+			if err != nil {
+				useAnswer = previousSuccessFlowStatsAnswer
+			}
+			content := ""
+			if selected {
+				content = lfc.RenderPipelineFlowStats(useAnswer, pipelineInfo, pipelines, selectedIndex)
 			} else {
-
-				content := logstash_flow.RenderPipelineFlowStatsDetails(pipelineFlowStatsAnswer, pipelineInfo, pipelines, selectedIndex)
-
-				area.Update(content + pausedMessage[paused])
-				time.Sleep(1 * time.Second)
+				content = lfc.RenderPipelineFlowStatsDetails(pipelineFlowStatsAnswer, pipelineInfo, pipelines, selectedIndex)
 			}
+			errorString := "\n"
+			if err != nil {
+				errorString = fmt.Sprintf("Warning: could not fetch data %s\n", err)
+			}
+			message = errorString + content + pausedMessage[paused]
 		}
+		if lastMessage != message {
+			area.Update(message)
+
+		}
+		time.Sleep(sleepDuration)
 	}
 
 	area.Update("Quitting application\n\n")
