@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 
 	"github.com/fatih/color"
 )
+
+type CustomFloat float64
 
 type LogstashFlowConfig struct {
 	Url                string
@@ -25,12 +28,12 @@ func (lfc *LogstashFlowConfig) NextMetric() {
 }
 
 type FlowIntervals struct {
-	Current       float64 `json:"current"`
-	Last1Minute   float64 `json:"last_1_minute"`
-	Last5Minutes  float64 `json:"last_5_minutes"`
-	Last15Minutes float64 `json:"last_15_minutes"`
-	Last1Hour     float64 `json:"last_1_hour"`
-	Lifetime      float64 `json:"lifetime"`
+	Current       CustomFloat `json:"current"`
+	Last1Minute   CustomFloat `json:"last_1_minute"`
+	Last5Minutes  CustomFloat `json:"last_5_minutes"`
+	Last15Minutes CustomFloat `json:"last_15_minutes"`
+	Last1Hour     CustomFloat `json:"last_1_hour"`
+	Lifetime      CustomFloat `json:"lifetime"`
 }
 
 type FlowWorkers struct {
@@ -210,7 +213,8 @@ var red = color.New(color.FgRed)
 var green = color.New(color.FgGreen)
 var blue = color.New(color.FgBlue)
 
-func getDiffString(diff float64) string {
+func getDiffString(v1, v2 CustomFloat) string {
+	diff := float64(v1) - float64(v2)
 	diffOutput := ""
 	v := fmt.Sprintf("%8.4f", diff)
 	if diff < -0.1 {
@@ -226,10 +230,33 @@ func getDiffString(diff float64) string {
 func getFlowIntervalDiffsString(fi FlowIntervals) string {
 	return fmt.Sprintf("%-15f|%-15s|%-15s|%-15s",
 		fi.Current,
-		getDiffString(fi.Current-fi.Lifetime),
-		getDiffString(fi.Current-fi.Last15Minutes),
-		getDiffString(fi.Current-fi.Last1Minute),
+		getDiffString(fi.Current, fi.Lifetime),
+		getDiffString(fi.Current, fi.Last15Minutes),
+		getDiffString(fi.Current, fi.Last1Minute),
 	)
+}
+
+func (cf *CustomFloat) UnmarshalJSON(data []byte) error {
+	var floatValue float64
+	if err := json.Unmarshal(data, &floatValue); err == nil {
+		*cf = CustomFloat(floatValue)
+		return nil
+	}
+
+	var stringValue string
+	if err := json.Unmarshal(data, &stringValue); err != nil {
+		return err
+	}
+
+	if stringValue == "Infinity" {
+		*cf = CustomFloat(math.Inf(1)) // Positive infinity
+	} else if stringValue == "-Infinity" {
+		*cf = CustomFloat(math.Inf(-1)) // Negative infinity
+	} else {
+		return fmt.Errorf("invalid value for CustomFloat: %s", stringValue)
+	}
+
+	return nil
 }
 
 func (lfc LogstashFlowConfig) printFlowWorkers(fw []FilterOrOutput) string {
@@ -307,8 +334,8 @@ func (lfc LogstashFlowConfig) RenderPipelineFlowStatsDetails(answer PipelineAnsw
 		output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|\n",
 			answer.Pipelines[pipelineName].Plugins.Inputs[i].Name,
 			Current,
-			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current-answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Lifetime),
-			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current-answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Last1Minute),
+			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current, answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Lifetime),
+			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current, answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Last1Minute),
 		)
 	}
 	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
@@ -327,7 +354,7 @@ func (lfc LogstashFlowConfig) RenderPipelineFlowStatsDetails(answer PipelineAnsw
 	return output
 }
 
-func FloatString(v float64) string {
+func FloatString(v CustomFloat) string {
 	return fmt.Sprintf("%.4f", v)
 }
 
@@ -353,7 +380,8 @@ func (lfc LogstashFlowConfig) RenderPipelineFlowStats(answer PipelineAnswer, pip
 		cumulativeEvent.In += ithData.Events.In
 		cumulativeEvent.Filtered += ithData.Events.Filtered
 		cumulativeEvent.Out += ithData.Events.Out
-		output += fmt.Sprintf("|%-15s|%15d|%15d|%15d|%15s|%15s|\n", pipelines[i], ithData.Events.In, ithData.Events.Filtered, ithData.Events.Out, FloatString(ithData.Flow.QueueBackpressure.Current), FloatString(ithData.Flow.WorkerConcurrency.Current))
+		output += fmt.Sprintf("|%-15s|%15d|%15d|%15d|%15s|%15s|\n", pipelines[i], ithData.Events.In, ithData.Events.Filtered, ithData.Events.Out,
+			FloatString(ithData.Flow.QueueBackpressure.Current), FloatString(ithData.Flow.WorkerConcurrency.Current))
 	}
 	output += fmt.Sprintf("%s+---------------+---------------+---------------+---------------+---------------+---------------+\n", padding)
 	output += fmt.Sprintf("%s|%-15s|%15d|%15d|%15d|%15s|%15s|\n", padding, "total", cumulativeEvent.In, cumulativeEvent.Filtered, cumulativeEvent.Out, "N/A", "N/A")
