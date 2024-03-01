@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	logstash_flow "cmd/main.go/internal"
@@ -34,15 +33,24 @@ var pausedMessage = map[bool]string{
 
 func main() {
 	lfc := logstash_flow.NewLogstashFlowConfig("http://localhost:9600")
-	pipelineInfo, err := lfc.GetPipelineInfo()
+	var pipelineInfo logstash_flow.NodeOverview
+	var err error
+
+	fmt.Println("Logstash Top")
+	fmt.Println("--------------------------")
+	area := cursor.NewArea()
 
 	for {
+		pipelineInfo, err = lfc.GetPipelineInfo()
 		if err == nil {
 			break
 		} else {
-			log.Printf("%s", err)
+			errorString := "Success\n"
+			if err != nil {
+				errorString = fmt.Sprintf("Warning: could not fetch data %s\n", err)
+			}
+			area.Update(errorString)
 			time.Sleep(2 * time.Second)
-			pipelineInfo, err = lfc.GetPipelineInfo()
 		}
 	}
 
@@ -62,7 +70,12 @@ func main() {
 	// Whether we perform curl request or we stop
 	paused := false
 
+	lastMessage := ""
+	message := ""
+	timeoutchain := make(chan bool)
+
 	go keyboard.Listen(func(key keys.Key) (stop bool, err error) {
+		sendSignal := true
 		switch key.Code {
 		case keys.CtrlC:
 			quit = true
@@ -75,7 +88,6 @@ func main() {
 			// if !selected {
 			selectedIndex = (selectedIndex - 1 + len(pipelines)) % len(pipelines)
 			// }
-
 		case keys.Enter:
 			selected = true
 
@@ -99,33 +111,36 @@ func main() {
 				lfc.NextMetric()
 			}
 
-			// fmt.Printf("\rYou pressed the rune key: %s\n", key)
-			// default:
-			// 	fmt.Printf("\rYou pressed: %s\n", key)
+		// fmt.Printf("\rYou pressed the rune key: %s\n", key)
+		// default:
+		// 	fmt.Printf("\rYou pressed: %s\n", key)
+		default:
+			sendSignal = true
+		}
+		if sendSignal {
+			timeoutchain <- true
 		}
 
 		return false, nil // Return false to continue listening
 	})
 
-	fmt.Println("Logstash Top")
-	fmt.Println("--------------------------")
-	area := cursor.NewArea()
 	previousSuccessFlowStatsAnswer := logstash_flow.PipelineAnswer{}
 	pipelineFlowStatsAnswer := logstash_flow.PipelineAnswer{}
-	lastMessage := ""
-	message := ""
 	sleepDuration := 1 * time.Second
 
 	for !quit {
 		lastMessage = message
 		if help { // To be reactive to the press of the 'h'
 			message = helpMessages[selected]
-			sleepDuration = 200 * time.Millisecond
+			sleepDuration = 5 * time.Second
+
 		} else {
 			sleepDuration = 1 * time.Second
 			// If not paused download new information
 			if !paused {
-				previousSuccessFlowStatsAnswer = pipelineFlowStatsAnswer
+				if err == nil { // Only overwrite the old answer if it's successful
+					previousSuccessFlowStatsAnswer = pipelineFlowStatsAnswer
+				}
 				pipelineFlowStatsAnswer, err = lfc.GetPipelineFlowStats(pipelineInfo)
 			}
 
@@ -148,7 +163,13 @@ func main() {
 		if lastMessage != message {
 			area.Update(message)
 		}
-		time.Sleep(sleepDuration)
+
+		select {
+		case <-timeoutchain:
+			break
+		case <-time.After(sleepDuration):
+			break
+		}
 	}
 
 	area.Update("Quitting application\n\n")
