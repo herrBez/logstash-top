@@ -43,12 +43,16 @@ func main() {
 	for {
 		pipelineInfo, err = lfc.GetPipelineInfo()
 		if err == nil {
-			break
-		} else {
-			errorString := "Success\n"
-			if err != nil {
-				errorString = fmt.Sprintf("Warning: could not fetch data %s\n", err)
+			if len(pipelineInfo.Pipelines) > 0 {
+				break
+			} else {
+				errorString := fmt.Sprintf("Warning: could not fetch pipeline %s\n", err)
+				area.Update(errorString)
+				time.Sleep(2 * time.Second)
 			}
+		} else {
+
+			errorString := fmt.Sprintf("Warning: could not fetch data %s\n", err)
 			area.Update(errorString)
 			time.Sleep(2 * time.Second)
 		}
@@ -115,7 +119,7 @@ func main() {
 		// default:
 		// 	fmt.Printf("\rYou pressed: %s\n", key)
 		default:
-			sendSignal = true
+			sendSignal = false
 		}
 		if sendSignal {
 			timeoutchain <- true
@@ -130,15 +134,14 @@ func main() {
 
 	for !quit {
 		lastMessage = message
-		if help { // To be reactive to the press of the 'h'
+		if help {
 			message = helpMessages[selected]
 			sleepDuration = 5 * time.Second
-
 		} else {
 			sleepDuration = 1 * time.Second
 			// If not paused download new information
 			if !paused {
-				if err == nil { // Only overwrite the old answer if it's successful
+				if err == nil { // Only overwrite the old answer if the new one is successful
 					previousSuccessFlowStatsAnswer = pipelineFlowStatsAnswer
 				}
 				pipelineFlowStatsAnswer, err = lfc.GetPipelineFlowStats(pipelineInfo)
@@ -160,6 +163,7 @@ func main() {
 			}
 			message = errorString + content + pausedMessage[paused]
 		}
+		// Refresh only if needed
 		if lastMessage != message {
 			area.Update(message)
 		}
