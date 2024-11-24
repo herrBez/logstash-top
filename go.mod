@@ -1,6 +1,6 @@
 module cmd/main.go
 
-go 1.21.6
+go 1.23.0
 
 require (
 	atomicgo.dev/cursor v0.2.0
