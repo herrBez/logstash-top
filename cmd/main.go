@@ -23,6 +23,7 @@ var helpMessages = map[bool]string{
 	false: fixedHelpMessage,
 	true: fixedHelpMessage +
 		`- 'b' back
+- 'n' show next (worker) metrics
 `,
 }
 
@@ -111,7 +112,7 @@ func main() {
 			if key.String() == "h" {
 				help = !help
 			}
-			if key.String() == "w" {
+			if key.String() == "n" {
 				lfc.NextMetric()
 			}
 
