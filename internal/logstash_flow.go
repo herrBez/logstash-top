@@ -325,20 +325,21 @@ func (lfc LogstashFlowConfig) RenderPipelineFlowStatsDetails(answer PipelineAnsw
 	)
 
 	output += fmt.Sprintf("%30s", "===Inputs===\n")
-	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
-	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|\n", "Name", "Throughput", "DiffLifetime", "Diff1Minutes")
-	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
+	output += fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
+	output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|%-15s|\n", "Name", "Throughput", "DiffLifetime", "Diff1Minutes", "Diff15Minutes")
+	output += fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
 	for i := 0; i < len(answer.Pipelines[pipelineName].Plugins.Inputs); i++ {
 
 		Current := fmt.Sprintf("%f", answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current)
-		output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|\n",
+		output += fmt.Sprintf("|%-10s|%-15s|%-15s|%-15s|%-15s|\n",
 			answer.Pipelines[pipelineName].Plugins.Inputs[i].Name,
 			Current,
 			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current, answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Lifetime),
 			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current, answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Last1Minute),
+			getDiffString(answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Current, answer.Pipelines[pipelineName].Plugins.Inputs[i].Flow.Throughput.Last15Minutes),
 		)
 	}
-	output += fmt.Sprintf("+----------+---------------+---------------+---------------+\n")
+	output += fmt.Sprintf("+----------+---------------+---------------+---------------+---------------+\n")
 
 	output += fmt.Sprintf("%30s", "===Filters===\n")
 	output += lfc.printFlowWorkers(answer.Pipelines[pipelineName].Plugins.Filters)
