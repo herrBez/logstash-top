@@ -1,5 +1,7 @@
 # Logstash Top
 
+> ⚠️ This repository is archived and no longer maintained. For an actively maintained and improved alternative, check out [tuistash](https://github.com/edmocosta/tuistash).
+
 Logstash top is a top-like utility to display the Logsash metrics.
 It is meant as an ad-hoc analysis tool and not a substitute for Stack Monitoring.
 
